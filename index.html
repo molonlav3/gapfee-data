@@ -58,9 +58,10 @@
   status.remove();
 
   for (const id of ids) {
-    let rec = null, hist = [];
+    let rec = null, hist = [], day = null;
     try { rec = await get(`latest/${id}.json`); } catch {}
     try { hist = await get(`history/${id}.json`); } catch {}
+    try { day = await get(`daily/${id}.json`); } catch {}
     const e = idx[id];
     const mode = e.observe ? "observe" : e.shadow ? "shadow" : "live";
     const i = rec?.inputs ?? {};
@@ -93,6 +94,13 @@
       if (rec.update) add("signed", `nonce ${rec.update.nonce}, expires ${new Date(Number(rec.update.expiry) * 1000).toUTCString()}`);
       dl.append($("dt", {}, "raw"), $("dd", {}, $("a", { href: `latest/${id}.json` }, "latest"), " · ", $("a", { href: `history/${id}.json` }, "history")));
       card.append(dl);
+    }
+    if (day?.gap) {
+      const usd = (n) => `${n < 0 ? "-" : ""}$${Math.abs(n).toFixed(2)}`;
+      const line = (p) => `${p.label}: ${p.swaps} swaps, $${p.volumeUsd.toFixed(0)} volume, fees ${usd(p.lpFeesUsd)}${p.lpLossUsd == null ? "" : `, lost ${usd(p.lpLossUsd)} to informed flow (${p.markoutBps.toFixed(1)}bp), kept ${usd(p.lpFeesUsd - p.lpLossUsd)}`}`;
+      const box = $("div", { class: "muted" }, `last ${day.windowHours}h (${ago(day.at)}): `, line(day.gap));
+      if (day.control) box.append(" · ", line(day.control));
+      card.append(box);
     }
     if (hist.length > 1) card.append(sparkline(hist));
     root.append(card);
