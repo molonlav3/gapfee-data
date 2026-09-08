@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GapFee fees</title>
+<style>
+  :root { color-scheme: light dark; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  body { margin: 2rem auto; max-width: 56rem; padding: 0 1rem; line-height: 1.5; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8884; vertical-align: top; }
+  th { font-weight: 600; }
+  .muted { opacity: .65; font-size: .9em; }
+  code { font-size: .9em; }
+</style>
+</head>
+<body>
+<h1>GapFee fees</h1>
+<p class="muted">Current swap fee per pool, as set by the agent. Source: <a href="latest/index.json">latest/index.json</a>.</p>
+<table id="t"><thead><tr><th>Pool</th><th>Fee</th><th>Decided</th><th>Mode</th><th>Reason</th></tr></thead><tbody></tbody></table>
+<p class="muted" id="status">loading…</p>
+<script>
+(async () => {
+  const tbody = document.querySelector("#t tbody");
+  const status = document.getElementById("status");
+  try {
+    const idx = await (await fetch("latest/index.json", { cache: "no-store" })).json();
+    const ids = Object.keys(idx);
+    if (!ids.length) { status.textContent = "no pools published yet"; return; }
+    for (const id of ids) {
+      const e = idx[id];
+      let reason = "";
+      try { reason = (await (await fetch(`latest/${id}.json`, { cache: "no-store" })).json()).reason ?? ""; } catch {}
+      const tr = document.createElement("tr");
+      const cell = (t) => { const td = document.createElement("td"); td.textContent = t; return td; };
+      tr.append(cell(`${e.ticker}/USDG`), cell(e.feePct), cell(new Date(e.decidedAt).toUTCString()), cell(e.shadow ? "shadow" : "live"), cell(reason));
+      const a = document.createElement("a"); a.href = `latest/${id}.json`; a.textContent = "json"; tr.lastChild.append(" ", a);
+      tbody.append(tr);
+    }
+    status.textContent = `${ids.length} pool(s)`;
+  } catch (err) { status.textContent = `could not load feed: ${err.message}`; }
+})();
+</script>
+</body>
+</html>
