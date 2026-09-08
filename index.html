@@ -3,42 +3,121 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GapFee fees</title>
+<title>GapFee</title>
 <style>
-  :root { color-scheme: light dark; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  body { margin: 2rem auto; max-width: 56rem; padding: 0 1rem; line-height: 1.5; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8884; vertical-align: top; }
-  th { font-weight: 600; }
-  .muted { opacity: .65; font-size: .9em; }
-  code { font-size: .9em; }
+  :root {
+    color-scheme: light dark;
+    --bg: #fafaf7; --fg: #1a1a1a; --muted: #6b6b66; --line: #e2e2dc; --card: #ffffff; --accent: #1f6f5f; --warn: #b3541e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111211; --fg: #ecece6; --muted: #9a9a92; --line: #2a2b28; --card: #191a18; --accent: #7fd1b9; --warn: #f0a868; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  main { max-width: 64rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+  h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 .25rem; letter-spacing: .02em; }
+  .sub { color: var(--muted); margin: 0 0 1.5rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+  .row { display: flex; flex-wrap: wrap; gap: 1rem 2rem; align-items: baseline; }
+  .fee { font-size: 2.4rem; font-weight: 600; line-height: 1; }
+  .badge { display: inline-block; padding: .1rem .5rem; border: 1px solid var(--line); border-radius: 999px; font-size: .75rem; color: var(--muted); }
+  .badge.live { border-color: var(--accent); color: var(--accent); }
+  .badge.observe { border-color: var(--warn); color: var(--warn); }
+  .reason { margin: .75rem 0; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: .5rem 0 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  svg { width: 100%; height: auto; display: block; margin-top: .75rem; }
+  .axis { font-family: inherit; }
+  .axis { fill: var(--muted); font-size: 10px; }
+  .muted { color: var(--muted); }
+  a { color: inherit; }
+  .empty { color: var(--muted); padding: 2rem 0; }
 </style>
 </head>
 <body>
-<h1>GapFee fees</h1>
-<p class="muted">Current swap fee per pool, as set by the agent. Source: <a href="latest/index.json">latest/index.json</a>.</p>
-<table id="t"><thead><tr><th>Pool</th><th>Fee</th><th>Decided</th><th>Mode</th><th>Reason</th></tr></thead><tbody></tbody></table>
-<p class="muted" id="status">loading…</p>
+<main>
+  <h1>GapFee</h1>
+  <p class="sub">Swap fees on tokenized-stock/USDG pools, set by Margin every few minutes. Every number here is read from chain or from the agent's inputs. <a href="latest/index.json">feed</a></p>
+  <div id="pools"></div>
+  <p class="empty" id="status">loading…</p>
+</main>
 <script>
 (async () => {
-  const tbody = document.querySelector("#t tbody");
+  const $ = (t, attrs = {}, ...kids) => { const e = document.createElement(t); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); e.append(...kids); return e; };
+  const pct = (pips) => `${(pips / 10000).toFixed(2)}%`;
+  const ago = (iso) => { const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000); return s < 90 ? `${Math.round(s)}s ago` : s < 5400 ? `${Math.round(s / 60)}m ago` : `${(s / 3600).toFixed(1)}h ago`; };
+  const get = async (u) => (await fetch(u, { cache: "no-store" })).json();
   const status = document.getElementById("status");
-  try {
-    const idx = await (await fetch("latest/index.json", { cache: "no-store" })).json();
-    const ids = Object.keys(idx);
-    if (!ids.length) { status.textContent = "no pools published yet"; return; }
-    for (const id of ids) {
-      const e = idx[id];
-      let reason = "";
-      try { reason = (await (await fetch(`latest/${id}.json`, { cache: "no-store" })).json()).reason ?? ""; } catch {}
-      const tr = document.createElement("tr");
-      const cell = (t) => { const td = document.createElement("td"); td.textContent = t; return td; };
-      tr.append(cell(`${e.ticker}/USDG`), cell(e.feePct), cell(new Date(e.decidedAt).toUTCString()), cell(e.shadow ? "shadow" : "live"), cell(reason));
-      const a = document.createElement("a"); a.href = `latest/${id}.json`; a.textContent = "json"; tr.lastChild.append(" ", a);
-      tbody.append(tr);
+  const root = document.getElementById("pools");
+
+  let idx;
+  try { idx = await get("latest/index.json"); } catch (e) { status.textContent = `feed unavailable: ${e.message}`; return; }
+  const ids = Object.keys(idx);
+  if (!ids.length) { status.textContent = "no pools published yet"; return; }
+  status.remove();
+
+  for (const id of ids) {
+    let rec = null, hist = [];
+    try { rec = await get(`latest/${id}.json`); } catch {}
+    try { hist = await get(`history/${id}.json`); } catch {}
+    const e = idx[id];
+    const mode = e.observe ? "observe" : e.shadow ? "shadow" : "live";
+    const i = rec?.inputs ?? {};
+    const m = i.market ?? {};
+    const when = m.phase === "open" ? `open, ${m.minutesToClose}m to close` : `${m.phase ?? "?"}${m.minutesToOpen != null ? `, ${fmtMin(m.minutesToOpen)} to open` : ""}`;
+
+    const card = $("div", { class: "card" },
+      $("div", { class: "row" },
+        $("span", { class: "fee" }, e.feePct),
+        $("span", {}, `${e.ticker}/USDG`),
+        $("span", { class: `badge ${mode}` }, mode === "observe" ? "observe: third-party pool, not signed" : mode),
+        $("span", { class: "muted" }, `decided ${ago(e.decidedAt)}`)),
+      $("p", { class: "reason" }, rec?.reason ?? ""),
+    );
+    if (rec) {
+      const dl = $("dl");
+      const add = (k, v) => { if (v !== undefined && v !== null && v !== "") dl.append($("dt", {}, k), $("dd", {}, String(v))); };
+      add("market", when);
+      add("pool price", i.pool?.priceUsd != null ? `$${i.pool.priceUsd}` : null);
+      add("reference", i.reference?.priceUsd != null ? `$${i.reference.priceUsd} (${i.reference.source}, ${Math.round((i.reference.ageSeconds ?? 0) / 60)}m old)` : `none (${i.reference?.source ?? "?"})`);
+      add("gap", i.gapPct != null ? `${i.gapPct >= 0 ? "+" : ""}${i.gapPct}%` : null);
+      add("control pool", i.controlPool?.priceUsd != null ? `$${i.controlPool.priceUsd}` : null);
+      add("swaps", i.swapsLastWindow ? `${i.swapsLastWindow.count} in ${i.swapsLastWindow.windowMinutes}m, $${i.swapsLastWindow.volumeUsd} volume, largest $${i.swapsLastWindow.largestUsd}` : null);
+      add("realized vol", i.realizedVolPct?.h24 != null ? `${i.realizedVolPct.h24}% (24h)` : null);
+      add("earnings", i.earnings?.next ? `${i.earnings.next} (${i.earnings.hoursUntil}h)` : null);
+      add("split", `LP ${pct(rec.lpPips)} + treasury ${pct(rec.treasuryPips)}`);
+      add("on-chain", rec.onchain ? `effective ${pct(rec.onchain.effectiveFeePips)}, cached ${pct(rec.onchain.cachedFeePips)}${rec.onchain.cachedExpiry ? ` until ${new Date(rec.onchain.cachedExpiry * 1000).toUTCString()}` : ""}, nonce ${rec.onchain.lastNonce}` : null);
+      add("bounds", i.fee ? `${pct(i.fee.minPips)} to ${pct(i.fee.maxPips)}, default ${pct(i.fee.defaultPips)}` : null);
+      add("decider", rec.decider);
+      if (rec.update) add("signed", `nonce ${rec.update.nonce}, expires ${new Date(Number(rec.update.expiry) * 1000).toUTCString()}`);
+      dl.append($("dt", {}, "raw"), $("dd", {}, $("a", { href: `latest/${id}.json` }, "latest"), " · ", $("a", { href: `history/${id}.json` }, "history")));
+      card.append(dl);
     }
-    status.textContent = `${ids.length} pool(s)`;
-  } catch (err) { status.textContent = `could not load feed: ${err.message}`; }
+    if (hist.length > 1) card.append(sparkline(hist));
+    root.append(card);
+  }
+
+  function fmtMin(m) { return m < 60 ? `${m}m` : m < 2880 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.round(m / 1440)}d`; }
+
+  function sparkline(h) {
+    const W = 800, H = 110, padL = 44, padR = 8, padT = 8, padB = 18;
+    const xs = h.map((p) => Date.parse(p.t));
+    const ys = h.map((p) => p.feePips / 10000);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = 0, y1 = Math.max(0.5, ...ys) * 1.1;
+    const X = (x) => padL + ((x - x0) / Math.max(1, x1 - x0)) * (W - padL - padR);
+    const Y = (y) => padT + (1 - (y - y0) / (y1 - y0)) * (H - padT - padB);
+    let d = "";
+    h.forEach((p, k) => { d += `${k ? "L" : "M"}${X(xs[k]).toFixed(1)},${Y(ys[k]).toFixed(1)} `; });
+    // shade closed-market stretches
+    let shade = "";
+    for (let k = 0; k < h.length - 1; k++) if (h[k].phase !== "open") shade += `<rect x="${X(xs[k]).toFixed(1)}" y="${padT}" width="${Math.max(1, X(xs[k + 1]) - X(xs[k])).toFixed(1)}" height="${H - padT - padB}" fill="currentColor" opacity=".06"/>`;
+    const ticks = [0, y1 / 2, y1].map((v) => `<text class="axis" x="2" y="${(Y(v) + 3).toFixed(1)}">${v.toFixed(2)}%</text>`).join("");
+    const span = (x1 - x0) / 3600000;
+    const wrap = $("div");
+    wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${shade}${ticks}<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"/><text class="axis" x="${padL}" y="${H - 4}">fee, last ${span < 1 ? `${Math.max(1, Math.round(span * 60))}m` : span < 48 ? `${span.toFixed(0)}h` : `${(span / 24).toFixed(0)}d`} (shaded = market closed)</text></svg>`;
+    return wrap.firstElementChild;
+  }
 })();
 </script>
 </body>
