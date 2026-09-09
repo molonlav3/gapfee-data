@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GapFee · Live</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0c0e'/%3E%3Cpath d='M6 24 L13 10 L19 20 L26 8' stroke='%23f2b544' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./">GapFee <em>/ Margin</em></a>
+    <nav><a href="./">Now</a><a href="live" aria-current="page">Live</a><a href="research">Research</a><a href="about">About</a><a href="latest/index.json">Feed</a></nav>
+  </header>
+  <section style="border-bottom:0">
+    <h2>Live <em>ledger</em></h2>
+    <p class="lede">Every pool Margin watches or prices: the fee, the reason, the inputs behind it, the on-chain state, the signed update when live, and the last 24 hours of what LPs kept. Refreshes every 60 seconds.</p>
+  </section>
+  <section>
+    <div class="cards" id="cards" style="grid-template-columns: 1fr;"><div class="empty">loading…</div></div>
+  </section>
+  <footer class="foot"><span>Observed pools are third-party pools Margin comments on; nothing is signed for them.</span><span><a href="latest/index.json">latest/index.json</a></span></footer>
+</div>
+<script src="site.js"></script>
+<script>
+  const el = document.getElementById("cards");
+  const go = () => GapFee.renderCards(el, true);
+  go();
+  setInterval(go, 60_000);
+</script>
+</body>
+</html>
