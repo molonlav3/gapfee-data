@@ -64,6 +64,7 @@
     try { day = await get(`daily/${id}.json`); } catch {}
     const e = idx[id];
     const mode = e.observe ? "observe" : e.shadow ? "shadow" : "live";
+    const explorer = rec?.chainId === 4663 ? "https://robinhoodchain.blockscout.com" : rec?.chainId === 46630 ? "https://explorer.testnet.chain.robinhood.com" : null;
     const i = rec?.inputs ?? {};
     const m = i.market ?? {};
     const when = m.phase === "open" ? `open, ${m.minutesToClose}m to close` : `${m.phase ?? "?"}${m.minutesToOpen != null ? `, ${fmtMin(m.minutesToOpen)} to open` : ""}`;
@@ -92,7 +93,15 @@
       add("bounds", i.fee ? `${pct(i.fee.minPips)} to ${pct(i.fee.maxPips)}, default ${pct(i.fee.defaultPips)}` : null);
       add("decider", rec.decider);
       if (rec.update) add("signed", `nonce ${rec.update.nonce}, expires ${new Date(Number(rec.update.expiry) * 1000).toUTCString()}`);
-      dl.append($("dt", {}, "raw"), $("dd", {}, $("a", { href: `latest/${id}.json` }, "latest"), " · ", $("a", { href: `history/${id}.json` }, "history")));
+      if (rec.refresh) {
+        const dd = $("dd", {}, `${rec.refresh.applied ? "applied" : `rejected (reason ${rec.refresh.rejectReason})`}, ${Number(rec.refresh.gasUsed).toLocaleString()} gas `);
+        if (explorer) dd.append($("a", { href: `${explorer}/tx/${rec.refresh.txHash}`, target: "_blank", rel: "noopener" }, "tx"));
+        dl.append($("dt", {}, "on-chain refresh"), dd);
+      }
+      const raw = $("dd", {}, $("a", { href: `latest/${id}.json` }, "latest"), " · ", $("a", { href: `history/${id}.json` }, "history"));
+      if (explorer && rec.hook && rec.hook !== "0x0000000000000000000000000000000000000000") raw.append(" · ", $("a", { href: `${explorer}/address/${rec.hook}`, target: "_blank", rel: "noopener" }, "hook"));
+      raw.append(" · ", $("span", { class: "muted" }, `pool ${id.slice(0, 10)}…`));
+      dl.append($("dt", {}, "raw"), raw);
       card.append(dl);
     }
     if (day?.gap) {
